@@ -1,0 +1,272 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Алгоритмы отсечения</title>
+    <style>
+        body {
+            margin: 0;
+            overflow: hidden;
+        }
+        canvas {
+            display: block;
+            padding: 100px;
+        }
+        #controls {
+            position: absolute;
+            top: 10px;
+            left: 10px;
+            background: rgba(255, 255, 255, 0.8);
+            padding: 10px;
+            border-radius: 5px;
+        }
+    </style>
+</head>
+<body>
+    <div id="controls">
+        <button onclick="runSutherlandCohen()">Алгоритм Сазерленда-Коэна</button>
+        <button onclick="runPolygonClipping()">Алгоритм отсечения многоугольников</button>
+    </div>
+    <canvas id="canvas"></canvas>
+
+    <script>
+        // Исходные данные
+        let segments = [
+            { x1: 10, y1: 10, x2: 90, y2: 90 },
+            { x1: -10, y1: 50, x2: 20, y2: 50 },
+            { x1: 50, y1: 50, x2: 150, y2: 150 },
+            { x1: 50, y1: -10, x2: 50, y2: 20 },
+            { x1: 50, y1: 90, x2: 50, y2: 110 },
+            { x1: -10, y1: -10, x2: 110, y2: 110 },
+            { x1: -20, y1: -20, x2: -10, y2: -10 },
+            { x1: 120, y1: 120, x2: 130, y2: 130 },
+        ];
+
+        let polygons = [
+            [
+                { x: 20, y: 20 },
+                { x: 80, y: 20 },
+                { x: 80, y: 80 },
+                { x: 20, y: 80 },
+            ],
+            [
+                { x: -10, y: 30 },
+                { x: 50, y: -10 },
+                { x: 110, y: 30 },
+                { x: 50, y: 110 },
+            ],
+        ];
+
+        let clipWindow = { xmin: 0, ymin: 0, xmax: 100, ymax: 100 };
+
+        const canvas = document.getElementById("canvas");
+        const ctx = canvas.getContext("2d");
+
+        // Устанавливаем размеры канваса
+
+        function transformX(x) {
+            return (x - clipWindow.xmin) / (clipWindow.xmax - clipWindow.xmin) * canvas.width;
+        }
+
+        function transformY(y) {
+            return canvas.height - (y - clipWindow.ymin) / (clipWindow.ymax - clipWindow.ymin) * canvas.height;
+        }
+
+        function drawInitialState() {
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            drawClippingWindow();
+            // drawSegments(segments, "black");
+            // drawPolygons(polygons, "black");
+        }
+
+        function drawClippingWindow() {
+            ctx.strokeStyle = "blue";
+            ctx.lineWidth = 2;
+            const x1 = transformX(clipWindow.xmin);
+            const y1 = transformY(clipWindow.ymax);
+            const x2 = transformX(clipWindow.xmax);
+            const y2 = transformY(clipWindow.ymin);
+            ctx.strokeRect(x1, y1, x2 - x1, y2 - y1);
+        }
+
+        function drawSegments(segmentList, color) {
+            ctx.strokeStyle = color;
+            ctx.lineWidth = 1;
+            segmentList.forEach(({ x1, y1, x2, y2 }) => {
+                ctx.beginPath();
+                ctx.moveTo(transformX(x1), transformY(y1));
+                ctx.lineTo(transformX(x2), transformY(y2));
+                ctx.stroke();
+            });
+        }
+
+        function drawPolygons(polygonList, color) {
+            ctx.strokeStyle = color;
+            ctx.lineWidth = 1;
+            polygonList.forEach(polygon => {
+                if (polygon.length === 0) return;
+
+                ctx.beginPath();
+                const start = polygon[0];
+                ctx.moveTo(transformX(start.x), transformY(start.y));
+
+                polygon.forEach(point => {
+                    ctx.lineTo(transformX(point.x), transformY(point.y));
+                });
+
+                ctx.closePath();
+                ctx.stroke();
+            });
+        }
+
+        function runSutherlandCohen() {
+            const visibleSegments = segments.map(clipLine).filter(Boolean);
+            drawInitialState();
+            drawSegments(visibleSegments, "green");
+        }
+
+        function clipLine(line) {
+            let { x1, y1, x2, y2 } = line;
+
+            const INSIDE = 0, LEFT = 1, RIGHT = 2, BOTTOM = 4, TOP = 8;
+
+            function computeOutCode(x, y) {
+                let code = INSIDE;
+                if (x < clipWindow.xmin) code |= LEFT;
+                else if (x > clipWindow.xmax) code |= RIGHT;
+                if (y < clipWindow.ymin) code |= BOTTOM;
+                else if (y > clipWindow.ymax) code |= TOP;
+                return code;
+            }
+
+            let outcode1 = computeOutCode(x1, y1);
+            let outcode2 = computeOutCode(x2, y2);
+
+            let accept = false;
+
+            while (true) {
+                if (!(outcode1 | outcode2)) {
+                    accept = true;
+                    break;
+                } else if (outcode1 & outcode2) {
+                    break;
+                } else {
+                    let x, y;
+                    const outcodeOut = outcode1 ? outcode1 : outcode2;
+
+                    if (outcodeOut & TOP) {
+                        x = x1 + (x2 - x1) * (clipWindow.ymax - y1) / (y2 - y1);
+                        y = clipWindow.ymax;
+                    } else if (outcodeOut & BOTTOM) {
+                        x = x1 + (x2 - x1) * (clipWindow.ymin - y1) / (y2 - y1);
+                        y = clipWindow.ymin;
+                    } else if (outcodeOut & RIGHT) {
+                        y = y1 + (y2 - y1) * (clipWindow.xmax - x1) / (x2 - x1);
+                        x = clipWindow.xmax;
+                    } else if (outcodeOut & LEFT) {
+                        y = y1 + (y2 - y1) * (clipWindow.xmin - x1) / (x2 - x1);
+                        x = clipWindow.xmin;
+                    }
+
+                    if (outcodeOut === outcode1) {
+                        x1 = x;
+                        y1 = y;
+                        outcode1 = computeOutCode(x1, y1);
+                    } else {
+                        x2 = x;
+                        y2 = y;
+                        outcode2 = computeOutCode(x2, y2);
+                    }
+                }
+            }
+
+            if (accept) {
+                return { x1, y1, x2, y2 };
+            }
+            return null;
+        }
+
+        function clipPolygon(polygon) {
+            const { xmin, ymin, xmax, ymax } = clipWindow;
+
+            let edges = [
+                { x1: xmin, y1: ymin, x2: xmax, y2: ymin },
+                { x1: xmax, y1: ymin, x2: xmax, y2: ymax },
+                { x1: xmax, y1: ymax, x2: xmin, y2: ymax },
+                { x1: xmin, y1: ymax, x2: xmin, y2: ymin },
+            ];
+
+            let clippedPolygon = polygon;
+
+            edges.forEach(edge => {
+                clippedPolygon = clipPolygonAgainstEdge(clippedPolygon, edge);
+            });
+
+            return clippedPolygon;
+        }
+
+        function clipPolygonAgainstEdge(polygon, edge) {
+            const result = [];
+            const { x1: xEdge1, y1: yEdge1, x2: xEdge2, y2: yEdge2 } = edge;
+
+            for (let i = 0; i < polygon.length; i++) {
+                const current = polygon[i];
+                const next = polygon[(i + 1) % polygon.length];
+
+                const insideCurrent = isInside(current, xEdge1, yEdge1, xEdge2, yEdge2);
+                const insideNext = isInside(next, xEdge1, yEdge1, xEdge2, yEdge2);
+
+                if (insideNext) {
+                    if (!insideCurrent) {
+                        const intersection = computeIntersection(current, next, xEdge1, yEdge1, xEdge2, yEdge2);
+                        result.push(intersection);
+                    }
+                    result.push(next);
+                } else if (insideCurrent) {
+                    const intersection = computeIntersection(current, next, xEdge1, yEdge1, xEdge2, yEdge2);
+                    result.push(intersection);
+                }
+            }
+
+            return result;
+        }
+
+        function isInside(point, xEdge1, yEdge1, xEdge2, yEdge2) {
+            const { x, y } = point;
+            return (xEdge2 - xEdge1) * (y - yEdge1) - (yEdge2 - yEdge1) * (x - xEdge1) >= 0;
+        }
+
+        function computeIntersection(p1, p2, xEdge1, yEdge1, xEdge2, yEdge2) {
+            const { x: x1, y: y1 } = p1;
+            const { x: x2, y: y2 } = p2;
+
+            const a1 = y2 - y1;
+            const b1 = x1 - x2;
+            const c1 = a1 * x1 + b1 * y1;
+
+            const a2 = yEdge2 - yEdge1;
+            const b2 = xEdge1 - xEdge2;
+            const c2 = a2 * xEdge1 + b2 * yEdge1;
+
+            const determinant = a1 * b2 - a2 * b1;
+
+            return {
+                x: (b2 * c1 - b1 * c2) / determinant,
+                y: (a1 * c2 - a2 * c1) / determinant,
+            };
+        }
+
+        function runPolygonClipping() {
+            const visiblePolygons = polygons.map(clipPolygon).filter(poly => poly.length > 0);
+            drawInitialState();
+            drawPolygons(visiblePolygons, "green");
+        }
+
+        function runAlgorithms() {
+            runSutherlandCohen();
+            runPolygonClipping();
+        }
+    </script>
+</body>
+</html>
